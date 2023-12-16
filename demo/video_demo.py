@@ -12,20 +12,22 @@ python demo/video_demo.py \
 ```
 """
 import argparse
-
+import os
 import cv2
 import mmcv
 from mmcv.transforms import Compose
 from mmdet.apis import inference_detector, init_detector
 from mmengine.utils import track_iter_progress
-
+from mmyolo.utils.labelme_utils import LabelmeFormat
 from mmyolo.registry import VISUALIZERS
-
+from tqdm import tqdm
 
 def parse_args():
     parser = argparse.ArgumentParser(description='MMYOLO video demo')
     parser.add_argument('video', help='Video file')
     parser.add_argument('config', help='Config file')
+    parser.add_argument(
+    '--out-dir', default='../output_debug', help='Path to output file')
     parser.add_argument('checkpoint', help='Checkpoint file')
     parser.add_argument(
         '--device', default='cuda:0', help='Device used for inference')
@@ -38,6 +40,11 @@ def parse_args():
         type=float,
         default=1,
         help='The interval of show (s), 0 is block')
+    parser.add_argument(
+        '--class-name',
+        nargs='+',
+        type=str,
+        help='Only Save those classes if set')
     args = parser.parse_args()
     return args
 
@@ -47,7 +54,8 @@ def main():
     assert args.out or args.show, \
         ('Please specify at least one operation (save/show the '
          'video) with the argument "--out" or "--show"')
-
+    cur_dir = os.getcwd()
+    print(cur_dir)
     # build the model from a config file and a checkpoint file
     model = init_detector(args.config, args.checkpoint, device=args.device)
 
@@ -62,15 +70,35 @@ def main():
     # then pass to the model in init_detector
     visualizer.dataset_meta = model.dataset_meta
 
+
+
+     # get model class name
+    dataset_classes = model.dataset_meta.get('classes')
+
+    # ready for labelme format if it is needed
+    to_label_format = LabelmeFormat(classes=dataset_classes)
+
+    if args.class_name is not None:
+        for class_name in args.class_name:
+            if class_name in dataset_classes:
+                continue
+            show_data_classes(dataset_classes)
+            raise RuntimeError(
+                'Expected args.class_name to be one of the list, '
+                f'but got "{class_name}"')
+
+
     video_reader = mmcv.VideoReader(args.video)
     video_writer = None
     if args.out:
         fourcc = cv2.VideoWriter_fourcc(*'mp4v')
         video_writer = cv2.VideoWriter(
-            args.out, fourcc, video_reader.fps,
+            args.out, fourcc, 50,
             (video_reader.width, video_reader.height))
 
-    for frame in track_iter_progress(video_reader):
+    for idx in tqdm(range(len(video_reader))):
+        frame = video_reader[idx]
+    # for frame in track_iter_progress(video_reader):
         result = inference_detector(model, frame, test_pipeline=test_pipeline)
         visualizer.add_datasample(
             name='video',
@@ -81,11 +109,23 @@ def main():
             pred_score_thr=args.score_thr)
         frame = visualizer.get_image()
 
+        pred_instances = result.pred_instances[
+            result.pred_instances.scores > args.score_thr]
+
+        filename = f"{idx}_frame.json"
+        out_file = None if args.show else os.path.join(args.out_dir, filename)
+        # out_file = out_file.replace(
+        #         os.path.splitext(out_file)[-1], '.json')\
+        # print(result.metainfo)
+        to_label_format(pred_instances, result.metainfo, out_file,
+                        args.class_name, idx)
+
         if args.show:
             cv2.namedWindow('video', 0)
             mmcv.imshow(frame, 'video', args.wait_time)
         if args.out:
             video_writer.write(frame)
+        # break
 
     if video_writer:
         video_writer.release()

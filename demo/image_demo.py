@@ -137,10 +137,11 @@ def main():
         pred_instances = result.pred_instances[
             result.pred_instances.scores > args.score_thr]
 
-        if args.to_labelme:
+        if True:
             # save result to labelme files
             out_file = out_file.replace(
                 os.path.splitext(out_file)[-1], '.json')
+            print(result.metainfo)
             to_label_format(pred_instances, result.metainfo, out_file,
                             args.class_name)
             continue

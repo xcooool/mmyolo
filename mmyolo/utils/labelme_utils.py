@@ -19,7 +19,7 @@ class LabelmeFormat:
         self.classes = classes
 
     def __call__(self, pred_instances: InstanceData, metainfo: dict,
-                 output_path: str, selected_classes: list):
+                 output_path: str, selected_classes: list, idx: int):
         """Get image data field for labelme.
 
         Args:
@@ -58,12 +58,12 @@ class LabelmeFormat:
             }
         """
 
-        image_path = os.path.abspath(metainfo['img_path'])
+        image_path = f'output\{idx}_frame.jpg'
 
         json_info = {
             'version': '5.1.1',
             'flags': {},
-            'imagePath': image_path,
+            'frame': idx,
             'imageData': None,
             'imageHeight': metainfo['ori_shape'][0],
             'imageWidth': metainfo['ori_shape'][1],
@@ -81,12 +81,16 @@ class LabelmeFormat:
 
             sub_dict = {
                 'label': pred_label,
+                # pred_bbox[:2] = (x1,y1)
+                # pred_bbox[2:] = (x2,y2)
                 'points': [pred_bbox[:2], pred_bbox[2:]],
                 'group_id': None,
                 'shape_type': 'rectangle',
                 'flags': {}
             }
             json_info['shapes'].append(sub_dict)
+
+
 
         with open(output_path, 'w', encoding='utf-8') as f_json:
             json.dump(json_info, f_json, ensure_ascii=False, indent=2)
